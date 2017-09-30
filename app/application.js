@@ -44,7 +44,6 @@ var Rect = (function () {
         this.topLeft.y = rect.topLeft.y;
         this.bottomRight.x = rect.bottomRight.x;
         this.bottomRight.y = rect.bottomRight.y;
-        var x = "pizda";
     };
     Rect.prototype.with = function () {
         return this.bottomRight.x - this.topLeft.x; // długośc obszaru gry
@@ -112,6 +111,7 @@ var Sprite = (function (_super) {
         left = left || sprite.offsetLeft;
         _this = _super.call(this, left, top, right, bottom) || this;
         _this.sprite = sprite;
+        _this.isVisible = true;
         return _this;
     }
     Sprite.prototype.moveTo = function (rect) {
@@ -119,6 +119,17 @@ var Sprite = (function (_super) {
         var _a = this.topLeft, posX = _a.x, posY = _a.y;
         this.sprite.style.left = posX + "px";
         this.sprite.style.top = posY + "px";
+    };
+    Sprite.prototype.hide = function () {
+        this.isVisible = false;
+        this.sprite.style.display = 'none';
+    };
+    //TO TEZ
+    Sprite.prototype.checkCollision = function (anotherRect) {
+        if (this.isVisible) {
+            return Side.None;
+        }
+        return _super.prototype.checkCollision.call(this, anotherRect);
     };
     return Sprite;
 }(Obstacle));
@@ -174,9 +185,6 @@ var Ball = (function (_super) {
         this.sprite.style.left = posX + "px";
         this.sprite.style.top = posY + "px";
     };
-    Ball.prototype.hide = function () {
-        this.sprite.style.display = 'none';
-    };
     return Ball;
 }(Sprite));
 var GameState;
@@ -189,13 +197,24 @@ var KeyCodes;
     KeyCodes[KeyCodes["LEFT"] = 37] = "LEFT";
     KeyCodes[KeyCodes["RIGHT"] = 39] = "RIGHT";
 })(KeyCodes || (KeyCodes = {}));
+var Brick = (function (_super) {
+    __extends(Brick, _super);
+    function Brick() {
+        return _super.apply(this, arguments) || this;
+    }
+    return Brick;
+}(Sprite));
 var Game = (function () {
-    function Game(ballElement, paddle, boardElement) {
-        this.loopInterval = 10;
+    function Game(ballElement, paddle, boardElement, bricks) {
+        this.loopInterval = 20;
         this.paddle = new Paddle(paddle, boardElement.offsetWidth);
         this.gameState = GameState.Running;
         this.ballElement = ballElement;
-        this.ball = new Ball(ballElement, new Vector(2, -2));
+        this.ball = new Ball(ballElement, new Vector(1, -1));
+        this.bricks = [];
+        for (var i = 0; i < bricks.length; i++) {
+            this.bricks.push(new Brick(bricks[i]));
+        }
         this.createWalls(this.ball.radius, boardElement.offsetWidth, boardElement.offsetHeight);
     }
     Game.prototype.createWalls = function (radius, maxX, maxY) {
@@ -230,6 +249,25 @@ var Game = (function () {
             if (_this.wallTop.checkCollision(newBallPosition) || _this.wallBottom.checkCollision(newBallPosition)) {
                 _this.ball.bounceHorizontal();
             }
+            for (var _i = 0, _a = _this.bricks; _i < _a.length; _i++) {
+                var brick = _a[_i];
+                var wasHit = false;
+                switch (brick.checkCollision(newBallPosition)) {
+                    case (Side.Left):
+                    case (Side.Right):
+                        wasHit = true;
+                        _this.ball.bounceHorizontal();
+                        break;
+                    case (Side.Top):
+                        wasHit = true;
+                        _this.ball.bounceVertical();
+                        break;
+                }
+                if (wasHit) {
+                    brick.hide();
+                    break;
+                }
+            }
             switch (_this.paddle.checkCollision(newBallPosition)) {
                 case (Side.Left):
                 case (Side.Right):
@@ -244,5 +282,5 @@ var Game = (function () {
     };
     return Game;
 }());
-var game = new Game(document.getElementsByClassName("ball")[0], document.getElementsByClassName("paddle")[0], document.getElementsByClassName("game-board")[0]);
+var game = new Game(document.getElementsByClassName("ball")[0], document.getElementsByClassName("paddle")[0], document.getElementsByClassName("game-board")[0], document.getElementsByClassName("brick"));
 game.run();

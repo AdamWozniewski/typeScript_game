@@ -44,7 +44,6 @@ class Rect {
         this.topLeft.y = rect.topLeft.y;
         this.bottomRight.x = rect.bottomRight.x;
         this.bottomRight.y = rect.bottomRight.y;
-        var x = "pizda";
     }
 
     with() {
@@ -101,6 +100,7 @@ class Obstacle extends Rect {
 
 class Sprite extends Obstacle {
     sprite: HTMLElement;
+    isVisible: boolean;
     constructor(sprite: HTMLElement, left?: number, top?: number, right?: number, bottom?: number) {
         bottom = bottom || sprite.offsetTop + sprite.offsetHeight;
         right = right || sprite.offsetTop + sprite.offsetWidth;
@@ -108,6 +108,7 @@ class Sprite extends Obstacle {
         left = left || sprite.offsetLeft;
         super(left, top, right, bottom);
         this.sprite = sprite;
+        this.isVisible = true;
     }
 
     moveTo(rect: Rect) {
@@ -115,6 +116,18 @@ class Sprite extends Obstacle {
         let {x: posX, y: posY} = this.topLeft;
         this.sprite.style.left = `${posX}px`;
         this.sprite.style.top = `${posY}px`;
+    }
+
+    hide() {
+        this.isVisible = false;
+        this.sprite.style.display = 'none';
+    }
+//TO TEZ
+    checkCollision(anotherRect: Rect): Side {
+        if(this.isVisible) {
+            return Side.None;
+        }
+        return super.checkCollision(anotherRect);
     }
 }
 
@@ -174,10 +187,6 @@ class Ball extends Sprite{
         this.sprite.style.left = `${posX}px`;
         this.sprite.style.top = `${posY}px`;
     }
-
-    hide() {
-        this.sprite.style.display = 'none';
-    }
 }
 
 enum GameState {
@@ -189,23 +198,32 @@ enum KeyCodes {
     RIGHT = 39
 }
 
+class Brick extends Sprite {
+}
+
 class Game {
-    loopInterval: number = 10;
+    loopInterval: number = 20;
     ballElement: HTMLElement;
     ball: Ball;
     paddle: Paddle;
     gameState: GameState;
+
+    bricks: Brick[];
 
     wallLeft: Obstacle;
     wallTop: Obstacle;
     wallRight: Obstacle;
     wallBottom: Obstacle;
 
-    constructor(ballElement: HTMLElement, paddle: HTMLElement, boardElement: HTMLElement) {
+    constructor(ballElement: HTMLElement, paddle: HTMLElement, boardElement: HTMLElement, bricks: HTMLCollection) {
         this.paddle = new Paddle(paddle, boardElement.offsetWidth);
         this.gameState = GameState.Running
         this.ballElement = ballElement;
-        this.ball = new Ball(ballElement,  new Vector(2, -2));
+        this.ball = new Ball(ballElement,  new Vector(1, -1));
+        this.bricks = [];
+        for(let i = 0; i < bricks.length; i++) {
+            this.bricks.push(new Brick(<HTMLElement>bricks[i]));
+        }
         this.createWalls(this.ball.radius, boardElement.offsetWidth, boardElement.offsetHeight)
     }
 
@@ -225,12 +243,12 @@ class Game {
                 this.paddle.moveRight(10);
             }
         });
+
         setInterval(() => {
             if(this.gameState !== GameState.Running) {
                 return;
             }
             let newBallPosition = this.ball.calculateNewPosition();
-
             if(this.wallBottom.checkCollision(newBallPosition)) {
                 this.gameState = GameState.GameOver;
                 this.ball.hide();
@@ -243,6 +261,27 @@ class Game {
 
             if(this.wallTop.checkCollision(newBallPosition) || this.wallBottom.checkCollision(newBallPosition)) {
                 this.ball.bounceHorizontal();
+            }
+
+            for (let brick of this.bricks) {
+                let wasHit = false;
+                switch (brick.checkCollision(newBallPosition)) {
+                    case (Side.Left):
+                    case  (Side.Right):
+                        wasHit = true;
+                        this.ball.bounceHorizontal();
+                        break;
+                    case (Side.Top):
+                        wasHit = true;
+                        this.ball.bounceVertical();
+                        break;
+                }
+                if( wasHit ) {
+                    brick.hide();
+                    break;
+                }
+
+
             }
 
             switch (this.paddle.checkCollision(newBallPosition)) {
@@ -263,6 +302,7 @@ class Game {
 var game = new Game(
     <HTMLElement>document.getElementsByClassName("ball")[0],
     <HTMLElement>document.getElementsByClassName("paddle")[0],
-    <HTMLElement>document.getElementsByClassName("game-board")[0]
+    <HTMLElement>document.getElementsByClassName("game-board")[0],
+    <HTMLCollection>document.getElementsByClassName("brick")
 );
 game.run();

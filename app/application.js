@@ -65,6 +65,17 @@ var Rect = (function () {
         this.topLeft.x += step;
         this.bottomRight.x += step;
     };
+    Rect.prototype.moveCenterXTo = function (centerX) {
+        var left = centerX - this.with() / 2;
+        var right = left + this.with();
+        this.topLeft.x = left;
+        this.bottomRight.x = right;
+    };
+    Rect.prototype.moveBottomTo = function (bottom) {
+        // var top = bottom - this.height();
+        this.topLeft.y = bottom - this.height();
+        this.bottomRight.y = bottom;
+    };
     return Rect;
 }());
 var Side;
@@ -80,6 +91,7 @@ var Obstacle = (function (_super) {
     function Obstacle() {
         return _super.apply(this, arguments) || this;
     }
+    // isVisible: boolean = true;
     Obstacle.prototype.checkCollision = function (anotherRect) {
         var w = 0.5 * (this.with() + anotherRect.with());
         var h = 0.5 * (this.height() + anotherRect.height());
@@ -89,10 +101,10 @@ var Obstacle = (function (_super) {
             var wy = w * dy;
             var hx = h * dx;
             if (wy > hx) {
-                return wy > -hx ? Side.Bottom : Side.Left;
+                return wy > -hx ? Side.Top : Side.Left;
             }
             else {
-                return wy > -hx ? Side.Right : Side.Top;
+                return wy > -hx ? Side.Right : Side.Bottom;
             }
         }
         else {
@@ -124,12 +136,9 @@ var Sprite = (function (_super) {
         this.isVisible = false;
         this.sprite.style.display = 'none';
     };
-    //TO TEZ
-    Sprite.prototype.checkCollision = function (anotherRect) {
-        if (this.isVisible) {
-            return Side.None;
-        }
-        return _super.prototype.checkCollision.call(this, anotherRect);
+    Sprite.prototype.show = function () {
+        this.isVisible = true;
+        this.sprite.style.display = 'block';
     };
     return Sprite;
 }(Obstacle));
@@ -151,9 +160,18 @@ var Paddle = (function (_super) {
         var newPosition = this.clone();
         newPosition.moveRight(step);
         if (newPosition.bottomRight.x <= this.maxRight + (2 * this.sprite.offsetWidth)) {
-            console.log(this.maxRight);
             this.moveTo(newPosition);
         }
+    };
+    Paddle.prototype.calculateHitAngle = function (ballX, ballRadius) {
+        var hitPoint = ballX - this.topLeft.x;
+        var maxPaddle = this.with() + ballRadius;
+        var minPaddle = -ballRadius;
+        var paddleRange = maxPaddle - minPaddle;
+        var minAngle = 160;
+        var maxAngle = 20;
+        var angleRange = maxAngle - minAngle;
+        return ((hitPoint * angleRange) / paddleRange) + minAngle;
     };
     return Paddle;
 }(Sprite));
@@ -166,6 +184,7 @@ var Ball = (function (_super) {
         _this.sprite = sprite;
         _this.radius = radius;
         _this.dir = direction;
+        _this.velocity = 5;
         return _this;
     }
     Ball.prototype.calculateNewPosition = function () {
@@ -184,6 +203,11 @@ var Ball = (function (_super) {
         var _a = this.topLeft, posX = _a.x, posY = _a.y;
         this.sprite.style.left = posX + "px";
         this.sprite.style.top = posY + "px";
+    };
+    Ball.prototype.bounceWithAngle = function (angle) {
+        angle = angle * (Math.PI / 180);
+        this.dir.x = Math.cos(angle) * this.velocity;
+        this.dir.y = -Math.sin(angle) * this.velocity;
     };
     return Ball;
 }(Sprite));
@@ -205,18 +229,52 @@ var Brick = (function (_super) {
     return Brick;
 }(Sprite));
 var Game = (function () {
-    function Game(ballElement, paddle, boardElement, bricks) {
+    function Game(ballElement, paddle, boardElement, bricks, lives, score, newGameButton) {
+        var _this = this;
+        this.lives = lives;
+        this.score = score;
+        this.newGameButton = newGameButton;
         this.loopInterval = 20;
         this.paddle = new Paddle(paddle, boardElement.offsetWidth);
         this.gameState = GameState.Running;
         this.ballElement = ballElement;
-        this.ball = new Ball(ballElement, new Vector(1, -1));
+        this.ball = new Ball(ballElement, new Vector(-2, -2));
         this.bricks = [];
         for (var i = 0; i < bricks.length; i++) {
             this.bricks.push(new Brick(bricks[i]));
         }
         this.createWalls(this.ball.radius, boardElement.offsetWidth, boardElement.offsetHeight);
+        this.newGame();
+        this.newGameButton.addEventListener('click', function () { return _this.newGame(); });
     }
+    Game.prototype.newGame = function () {
+        this.gameState = GameState.Running;
+        this.newGameButton.style.display = 'none';
+        this.livesLeft = 3;
+        this.lives.innerText = '' + this.livesLeft;
+        this.scoreNumber = 0;
+        this.ball.bounceWithAngle(60);
+        var ballPosition = this.ball.clone();
+        ballPosition.moveCenterXTo(this.paddle.centerX());
+        ballPosition.moveBottomTo(this.paddle.topLeft.y - 4);
+        this.ball.moveTo(ballPosition);
+        this.ball.show();
+    };
+    Game.prototype.lostLives = function () {
+        if (--this.livesLeft) {
+            this.ball.bounceWithAngle(600);
+            var ballPosition = this.ball.clone();
+            ballPosition.moveCenterXTo(this.paddle.centerX());
+            ballPosition.moveBottomTo(this.paddle.topLeft.y - 4);
+            this.ball.moveTo(ballPosition);
+        }
+        else {
+            this.gameState = GameState.GameOver;
+            this.newGameButton.style.display = 'block';
+            this.ball.hide();
+        }
+        this.lives.innerText = '' + this.livesLeft;
+    };
     Game.prototype.createWalls = function (radius, maxX, maxY) {
         this.wallLeft = new Obstacle(-radius, -radius, 0, maxY + radius);
         this.wallTop = new Obstacle(-radius, -radius, maxX + radius, 0);
@@ -225,12 +283,19 @@ var Game = (function () {
     };
     Game.prototype.run = function () {
         var _this = this;
+        // document.addEventListener('keyup', (e) => {
+        //     // this.keyMap[e.keyCode] = false;
+        //     // if(e.keyCode === 37 ) {
+        //     //     this.paddle.moveLeft(5);
+        //     // }
+        // });
         document.addEventListener('keydown', function (e) {
-            if (e.keyCode === KeyCodes.LEFT) {
-                _this.paddle.moveLeft(10);
+            // this.keyMap[e.keyCode] = true;
+            if (e.keyCode === 37) {
+                _this.paddle.moveLeft(5);
             }
-            if (e.keyCode === KeyCodes.RIGHT) {
-                _this.paddle.moveRight(10);
+            else if (e.keyCode === 39) {
+                _this.paddle.moveRight(5);
             }
         });
         setInterval(function () {
@@ -238,9 +303,13 @@ var Game = (function () {
                 return;
             }
             var newBallPosition = _this.ball.calculateNewPosition();
+            // if(this.keyMap[KeyCodes.LEFT]) {
+            //     this.paddle.moveLeft(5);
+            // } else if(this.keyMap[KeyCodes.RIGHT]) {
+            //     this.paddle.moveRight(5);
+            // }
             if (_this.wallBottom.checkCollision(newBallPosition)) {
-                _this.gameState = GameState.GameOver;
-                _this.ball.hide();
+                _this.lostLives();
                 return;
             }
             if (_this.wallLeft.checkCollision(newBallPosition) || _this.wallRight.checkCollision(newBallPosition)) {
@@ -255,32 +324,29 @@ var Game = (function () {
                 switch (brick.checkCollision(newBallPosition)) {
                     case (Side.Left):
                     case (Side.Right):
+                        _this.ball.bounceVertical();
                         wasHit = true;
-                        _this.ball.bounceHorizontal();
                         break;
                     case (Side.Top):
+                    case (Side.Bottom):
+                        _this.ball.bounceHorizontal();
                         wasHit = true;
-                        _this.ball.bounceVertical();
                         break;
                 }
                 if (wasHit) {
+                    _this.scoreNumber += 20;
+                    _this.score.innerHTML = '' + _this.scoreNumber;
                     brick.hide();
                     break;
                 }
             }
-            switch (_this.paddle.checkCollision(newBallPosition)) {
-                case (Side.Left):
-                case (Side.Right):
-                    _this.ball.bounceHorizontal();
-                    break;
-                case (Side.Top):
-                    _this.ball.bounceVertical();
-                    break;
+            if (_this.paddle.checkCollision(newBallPosition)) {
+                _this.ball.bounceWithAngle(_this.paddle.calculateHitAngle(_this.ball.centerX(), _this.ball.radius));
             }
             _this.ball.moveTo(newBallPosition);
         }, this.loopInterval);
     };
     return Game;
 }());
-var game = new Game(document.getElementsByClassName("ball")[0], document.getElementsByClassName("paddle")[0], document.getElementsByClassName("game-board")[0], document.getElementsByClassName("brick"));
+var game = new Game(document.getElementsByClassName("ball")[0], document.getElementsByClassName("paddle")[0], document.getElementsByClassName("game-board")[0], document.getElementsByClassName("brick"), document.getElementById("lives"), document.getElementById("score"), document.getElementById("newGame"));
 game.run();

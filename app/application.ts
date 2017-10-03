@@ -71,6 +71,19 @@ class Rect {
         this.topLeft.x += step;
         this.bottomRight.x += step;
     }
+
+    moveCenterXTo(centerX: number) {
+        var left = centerX - this.with() / 2;
+        var right = left + this.with();
+        this.topLeft.x = left;
+        this.bottomRight.x = right;
+    }
+
+    moveBottomTo(bottom: number){
+        // var top = bottom - this.height();
+        this.topLeft.y = bottom - this.height();
+        this.bottomRight.y = bottom
+    }
 }
 
 enum Side {
@@ -78,6 +91,8 @@ enum Side {
 }
 
 class Obstacle extends Rect {
+    // isVisible: boolean = true;
+
     checkCollision(anotherRect: Rect): Side {
         var w = 0.5 * (this.with() + anotherRect.with());
         var h = 0.5 * (this.height() + anotherRect.height());
@@ -88,9 +103,9 @@ class Obstacle extends Rect {
             let wy = w * dy;
             let hx = h * dx;
             if (wy > hx) {
-                return wy > - hx ? Side.Bottom : Side.Left;
+                return wy > - hx ? Side.Top : Side.Left;
             } else {
-                return wy > - hx ? Side.Right : Side.Top;
+                return wy > - hx ? Side.Right : Side.Bottom;
             }
         } else {
             return Side.None;
@@ -122,13 +137,18 @@ class Sprite extends Obstacle {
         this.isVisible = false;
         this.sprite.style.display = 'none';
     }
-//TO TEZ
-    checkCollision(anotherRect: Rect): Side {
-        if(this.isVisible) {
-            return Side.None;
-        }
-        return super.checkCollision(anotherRect);
+    show() {
+        this.isVisible = true;
+        this.sprite.style.display = 'block';
     }
+// TO TEZ
+//     checkCollision(anotherRect: Rect): Side {
+//
+//         if(this.isVisible) {
+//             return Side.None;
+//         }
+//         return super.checkCollision(anotherRect);
+//     }
 }
 
 class Paddle extends Sprite {
@@ -148,16 +168,30 @@ class Paddle extends Sprite {
         let newPosition = this.clone();
         newPosition.moveRight(step);
         if(newPosition.bottomRight.x <= this.maxRight + (2 * this.sprite.offsetWidth)) {
-            console.log(this.maxRight)
             this.moveTo(newPosition);
         }
     }
+
+    calculateHitAngle(ballX: number, ballRadius: number): number {
+        var hitPoint = ballX - this.topLeft.x;
+        var maxPaddle = this.with() + ballRadius;
+        var minPaddle = -ballRadius;
+        var paddleRange = maxPaddle - minPaddle;
+
+        var minAngle = 160;
+        var maxAngle = 20;
+        var angleRange = maxAngle - minAngle;
+
+        return ((hitPoint * angleRange) / paddleRange) + minAngle;
+    }
+
 }
 
 class Ball extends Sprite{
     radius: number;
     dir: Vector;
     sprite: HTMLElement;
+    velocity: number
 
     constructor(sprite: HTMLElement,  direction: Vector) {
         var radius = 16;
@@ -165,6 +199,7 @@ class Ball extends Sprite{
         this.sprite = sprite;
         this.radius = radius;
         this.dir = direction;
+        this.velocity = 5;
     }
 
     calculateNewPosition() {
@@ -186,6 +221,12 @@ class Ball extends Sprite{
         let {x: posX, y: posY} = this.topLeft;
         this.sprite.style.left = `${posX}px`;
         this.sprite.style.top = `${posY}px`;
+    }
+
+    bounceWithAngle(angle: number) {
+        angle = angle * (Math.PI / 180);
+        this.dir.x = Math.cos(angle) * this.velocity;
+        this.dir.y = -Math.sin(angle) * this.velocity;
     }
 }
 
@@ -209,22 +250,59 @@ class Game {
     gameState: GameState;
 
     bricks: Brick[];
-
+    keyMap: {};
     wallLeft: Obstacle;
     wallTop: Obstacle;
     wallRight: Obstacle;
     wallBottom: Obstacle;
 
-    constructor(ballElement: HTMLElement, paddle: HTMLElement, boardElement: HTMLElement, bricks: HTMLCollection) {
+    livesLeft: number;
+    scoreNumber: number;
+
+    constructor(ballElement: HTMLElement, paddle: HTMLElement, boardElement: HTMLElement, bricks: HTMLCollection, public lives: HTMLElement, public score: HTMLElement,  public newGameButton: HTMLElement) {
         this.paddle = new Paddle(paddle, boardElement.offsetWidth);
         this.gameState = GameState.Running
         this.ballElement = ballElement;
-        this.ball = new Ball(ballElement,  new Vector(1, -1));
+        this.ball = new Ball(ballElement,  new Vector(-2, -2));
         this.bricks = [];
         for(let i = 0; i < bricks.length; i++) {
             this.bricks.push(new Brick(<HTMLElement>bricks[i]));
         }
-        this.createWalls(this.ball.radius, boardElement.offsetWidth, boardElement.offsetHeight)
+        this.createWalls(this.ball.radius, boardElement.offsetWidth, boardElement.offsetHeight);
+
+        this.newGame();
+        this.newGameButton.addEventListener('click', ()=> this.newGame());
+    }
+
+    newGame() {
+        this.gameState = GameState.Running;
+        this.newGameButton.style.display = 'none';
+        this.livesLeft = 3;
+        this.lives.innerText = ''+ this.livesLeft;
+        this.scoreNumber = 0;
+
+        this.ball.bounceWithAngle(60);
+        var ballPosition = this.ball.clone();
+        ballPosition.moveCenterXTo(this.paddle.centerX());
+        ballPosition.moveBottomTo(this.paddle.topLeft.y - 4);
+        this.ball.moveTo(ballPosition);
+
+        this.ball.show();
+    }
+
+    lostLives() {
+        if(--this.livesLeft) {
+            this.ball.bounceWithAngle(600);
+            var ballPosition = this.ball.clone();
+            ballPosition.moveCenterXTo(this.paddle.centerX());
+            ballPosition.moveBottomTo(this.paddle.topLeft.y - 4);
+            this.ball.moveTo(ballPosition);
+        } else {
+            this.gameState = GameState.GameOver;
+            this.newGameButton.style.display = 'block';
+            this.ball.hide();
+        }
+        this.lives.innerText = '' + this.livesLeft;
     }
 
     createWalls(radius, maxX: number, maxY: number) {
@@ -235,23 +313,35 @@ class Game {
     }
 
     run() {
+        // document.addEventListener('keyup', (e) => {
+        //     // this.keyMap[e.keyCode] = false;
+        //     // if(e.keyCode === 37 ) {
+        //     //     this.paddle.moveLeft(5);
+        //     // }
+        // });
         document.addEventListener('keydown', (e) => {
-            if (e.keyCode === KeyCodes.LEFT) {
-                this.paddle.moveLeft(10);
-            }
-            if (e.keyCode === KeyCodes.RIGHT) {
-                this.paddle.moveRight(10);
+            // this.keyMap[e.keyCode] = true;
+            if(e.keyCode === 37 ) {
+                this.paddle.moveLeft(5);
+            } else if (e.keyCode === 39) {
+                this.paddle.moveRight(5);
             }
         });
+
 
         setInterval(() => {
             if(this.gameState !== GameState.Running) {
                 return;
             }
             let newBallPosition = this.ball.calculateNewPosition();
+            // if(this.keyMap[KeyCodes.LEFT]) {
+            //     this.paddle.moveLeft(5);
+            // } else if(this.keyMap[KeyCodes.RIGHT]) {
+            //     this.paddle.moveRight(5);
+            // }
+
             if(this.wallBottom.checkCollision(newBallPosition)) {
-                this.gameState = GameState.GameOver;
-                this.ball.hide();
+                this.lostLives();
                 return;
             }
 
@@ -268,32 +358,27 @@ class Game {
                 switch (brick.checkCollision(newBallPosition)) {
                     case (Side.Left):
                     case  (Side.Right):
+                        this.ball.bounceVertical();
                         wasHit = true;
-                        this.ball.bounceHorizontal();
                         break;
                     case (Side.Top):
+                    case (Side.Bottom):
+                        this.ball.bounceHorizontal();
                         wasHit = true;
-                        this.ball.bounceVertical();
                         break;
                 }
                 if( wasHit ) {
+                    this.scoreNumber += 20;
+                    this.score.innerHTML = '' + this.scoreNumber;
                     brick.hide();
                     break;
                 }
-
-
             }
 
-            switch (this.paddle.checkCollision(newBallPosition)) {
-                case (Side.Left):
-                case  (Side.Right):
-                    this.ball.bounceHorizontal();
-                    break;
-                case (Side.Top):
-                    this.ball.bounceVertical();
-                    break;
-
+            if(this.paddle.checkCollision(newBallPosition)) {
+                this.ball.bounceWithAngle(this.paddle.calculateHitAngle(this.ball.centerX(), this.ball.radius));
             }
+
 
             this.ball.moveTo(newBallPosition);
         }, this.loopInterval);
@@ -303,6 +388,10 @@ var game = new Game(
     <HTMLElement>document.getElementsByClassName("ball")[0],
     <HTMLElement>document.getElementsByClassName("paddle")[0],
     <HTMLElement>document.getElementsByClassName("game-board")[0],
-    <HTMLCollection>document.getElementsByClassName("brick")
+    <HTMLCollection>document.getElementsByClassName("brick"),
+    <HTMLElement>document.getElementById("lives"),
+    <HTMLElement>document.getElementById("score"),
+    <HTMLElement>document.getElementById("newGame")
+
 );
 game.run();
